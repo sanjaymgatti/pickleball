@@ -16,6 +16,7 @@
             <button onclick="showTab('splitter')" id="tab-splitter" class="py-4 px-2 active-tab">Splitter</button>
             <button onclick="showTab('tourney')" id="tab-tourney" class="py-4 px-2">Tourney</button>
             <button onclick="showTab('practice')" id="tab-practice" class="py-4 px-2">Practice</button>
+			<button onclick="showTab('predictor')" id="tab-predictor" class="py-4 px-2"> DUPR Predictor</button>
         </div>
     </nav>
 
@@ -103,15 +104,60 @@
                 <button id="sharePracticeBtn" onclick="sharePractice()" class="hidden w-full mt-6 bg-blue-600 text-white py-3 rounded-lg shadow">Share to WhatsApp</button>
             </div>
         </div>
+		
+		<div id="section-predictor" class="hidden">
+			<div class="bg-white rounded-xl shadow p-6 border-t-4 border-indigo-600">
+				<div class="flex justify-between items-center mb-6">
+					<h2 class="text-2xl font-bold text-gray-800">DUPR Predictor</h2>
+					<div class="flex bg-gray-100 rounded-lg p-1">
+						<button onclick="setFormat('singles')" id="btn-singles" class="px-3 py-1 text-xs font-bold rounded-md bg-white shadow-sm text-indigo-600">Singles</button>
+						<button onclick="setFormat('doubles')" id="btn-doubles" class="px-3 py-1 text-xs font-bold rounded-md text-gray-500">Doubles</button>
+					</div>
+				</div>
+
+				<div class="space-y-4">
+					<div class="bg-blue-50 p-4 rounded-xl border border-blue-100">
+						<label class="block text-[10px] font-black text-blue-800 uppercase mb-3">Your Team Ratings</label>
+						<div class="grid grid-cols-2 gap-3">
+							<input type="number" id="myRating" step="0.01" class="w-full border p-2 rounded-lg text-sm" placeholder="Your DUPR">
+							<input type="number" id="partnerRating" step="0.01" class="w-full border p-2 rounded-lg text-sm hidden" placeholder="Partner DUPR">
+						</div>
+					</div>
+
+					<div class="bg-red-50 p-4 rounded-xl border border-red-100">
+						<label class="block text-[10px] font-black text-red-800 uppercase mb-3">Opponent Ratings</label>
+						<div class="grid grid-cols-2 gap-3">
+							<input type="number" id="opp1Rating" step="0.01" class="w-full border p-2 rounded-lg text-sm" placeholder="Opp 1 DUPR">
+							<input type="number" id="opp2Rating" step="0.01" class="w-full border p-2 rounded-lg text-sm hidden" placeholder="Opp 2 DUPR">
+						</div>
+					</div>
+
+					<div class="grid grid-cols-2 gap-4 pt-2">
+						<button onclick="calculateElo(1)" class="bg-green-600 text-white py-3 rounded-xl font-bold shadow-lg">Win</button>
+						<button onclick="calculateElo(0)" class="bg-red-600 text-white py-3 rounded-xl font-bold shadow-lg">Loss</button>
+					</div>
+				</div>
+
+				<div id="eloResult" class="mt-8 hidden">
+					<div class="text-center p-6 bg-slate-900 rounded-2xl border-b-4 border-indigo-500">
+						<p class="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">New Estimated Rating</p>
+						<h3 id="newRatingDisplay" class="text-5xl font-black text-white my-2">0.00</h3>
+						<p id="ratingDelta" class="text-sm font-bold"></p>
+					</div>
+					<p class="text-[9px] text-gray-400 mt-4 text-center italic">Algorithm: Team Average Elo (K-Factor 0.1)</p>
+				</div>
+			</div>
+		</div>
     </div>
 
     <script>
         let splitPlayers = [];
         let tourneyPlayers = [];
         let practicePlayers = [];
+		let currentFormat = 'singles';
 
         function showTab(tab) {
-            ['splitter', 'tourney', 'practice'].forEach(t => {
+            ['splitter', 'tourney', 'practice', 'predictor'].forEach(t => {
                 document.getElementById('section-' + t).classList.toggle('hidden', t !== tab);
                 document.getElementById('tab-' + t).classList.toggle('active-tab', t === tab);
             });
@@ -268,6 +314,58 @@
         function shareSplit() { window.location.href = "whatsapp://send?text=" + encodeURIComponent(window.lastSplitMsg); }
         function shareTourney() { window.location.href = "whatsapp://send?text=" + encodeURIComponent(window.lastTourneyMsg); }
         function sharePractice() { window.location.href = "whatsapp://send?text=" + encodeURIComponent(window.lastPracticeMsg); }
+		
+		function setFormat(format) {
+        currentFormat = format;
+        const isDoubles = format === 'doubles';
+        
+        // Toggle Input Visibility
+        document.getElementById('partnerRating').classList.toggle('hidden', !isDoubles);
+        document.getElementById('opp2Rating').classList.toggle('hidden', !isDoubles);
+        
+        // Toggle Button Styles
+        document.getElementById('btn-singles').className = !isDoubles ? 
+            "px-3 py-1 text-xs font-bold rounded-md bg-white shadow-sm text-indigo-600" : 
+            "px-3 py-1 text-xs font-bold rounded-md text-gray-500";
+        document.getElementById('btn-doubles').className = isDoubles ? 
+            "px-3 py-1 text-xs font-bold rounded-md bg-white shadow-sm text-indigo-600" : 
+            "px-3 py-1 text-xs font-bold rounded-md text-gray-500";
+            
+        document.getElementById('eloResult').classList.add('hidden');
+    }
+
+    function calculateElo(actualOutcome) {
+        const myR = parseFloat(document.getElementById('myRating').value) || 0;
+        const pR = parseFloat(document.getElementById('partnerRating').value) || 0;
+        const o1R = parseFloat(document.getElementById('opp1Rating').value) || 0;
+        const o2R = parseFloat(document.getElementById('opp2Rating').value) || 0;
+
+        if (!myR || !o1R) return alert("Please enter the primary ratings.");
+        if (currentFormat === 'doubles' && (!pR || !o2R)) return alert("Please enter all four ratings for Doubles.");
+
+        // 1. Calculate Team Averages
+        const teamARating = currentFormat === 'doubles' ? (myR + pR) / 2 : myR;
+        const teamBRating = currentFormat === 'doubles' ? (o1R + o2R) / 2 : o1R;
+
+        // 2. Expected Outcome (Logistic Curve)
+        const expectedOutcome = 1 / (1 + Math.pow(10, (teamBRating - teamARating) / 1.0));
+
+        // 3. K-Factor (Sensitivity)
+        const K = 0.1; 
+
+        // 4. Update individual rating based on team performance
+        const delta = K * (actualOutcome - expectedOutcome);
+        const newRating = myR + delta;
+
+        // Display
+        document.getElementById('eloResult').classList.remove('hidden');
+        document.getElementById('newRatingDisplay').innerText = newRating.toFixed(3);
+        
+        const deltaEl = document.getElementById('ratingDelta');
+        deltaEl.innerText = (delta >= 0 ? "+" : "") + delta.toFixed(3);
+        deltaEl.className = `text-sm font-bold ${delta >= 0 ? 'text-green-400' : 'text-red-400'}`;
+    }
+		
     </script>
 </body>
 </html>
